@@ -1,9 +1,9 @@
 
 jobs:
   alpine_ls:
-    type: run
+    type: service
     image: alpine
-    tag: latest
     cmd:
       - ls
       - /var
+    api_expose: true

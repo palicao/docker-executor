@@ -4,11 +4,12 @@ import (
 	"io"
 	"io/ioutil"
 
-	"golang.org/x/net/context"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/client"
+	"golang.org/x/net/context"
 )
 
 type DockerApi struct {
@@ -44,7 +45,7 @@ func (api *DockerApi) pullImage(ctx context.Context, image string, tag string) e
 	return nil
 }
 
-func (api *DockerApi) RunContainer(job Job) (rc io.ReadCloser, err error) {
+func (api *DockerApi) RunJobAsContainer(job Job) (rc io.ReadCloser, err error) {
 
 	ctx := context.Background()
 
@@ -63,34 +64,83 @@ func (api *DockerApi) RunContainer(job Job) (rc io.ReadCloser, err error) {
 	createResponse, err := api.client.ContainerCreate(ctx, &container.Config{
 		Image: job.Image,
 		Cmd:   job.Cmd,
+		Env:   job.Env,
 	}, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
 
-	err = api.client.ContainerStart(ctx, createResponse.ID, types.ContainerStartOptions{});
+	err = api.client.ContainerStart(ctx, createResponse.ID, types.ContainerStartOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	resC, errC := api.client.ContainerWait(ctx, createResponse.ID, container.WaitConditionNextExit)
 	select {
-	case <- resC:
+	case <-resC:
 		break
 	case err := <-errC:
 		return nil, err
 	}
 
-	logResponse, err := api.client.ContainerLogs(ctx, createResponse.ID, types.ContainerLogsOptions{ShowStdout: true})
+	logOptions := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
+	logResponse, err := api.client.ContainerLogs(ctx, createResponse.ID, logOptions)
 	if err != nil {
 		return nil, err
 	}
+	defer logResponse.Close()
 
 	api.client.ContainerRemove(ctx, createResponse.ID, types.ContainerRemoveOptions{})
 
 	return logResponse, nil
 }
 
-func (api *DockerApi) RunService(service string) (rc io.ReadCloser, err error) {
-	return nil, nil
+func (api *DockerApi) RunJobAsService(job Job) (rc io.ReadCloser, err error) {
+
+	ctx := context.Background()
+
+	replicas := uint64(1)
+	replicatedOptions := swarm.ReplicatedService{
+		Replicas: &replicas,
+	}
+
+	containerSpec := swarm.ContainerSpec{
+		Image:   job.Image,
+		Command: job.Cmd,
+		Env:     job.Env,
+		//TODO secrets, configs
+	}
+
+	taskTemplate := swarm.TaskSpec{
+		ContainerSpec: &containerSpec,
+	}
+
+	resp, err := api.client.ServiceCreate(ctx, swarm.ServiceSpec{
+		Mode:         swarm.ServiceMode{Replicated: &replicatedOptions},
+		TaskTemplate: taskTemplate,
+	}, types.ServiceCreateOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	logOptions := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
+	logResponse, err := api.client.ServiceLogs(ctx, resp.ID, logOptions)
+	defer logResponse.Close()
+
+	//filterArgs := filters.NewArgs()
+	//filterArgs.Add("service", resp.ID)
+	//tasks, err := api.client.TaskList(ctx, types.TaskListOptions{Filters: filterArgs})
+	//if err != nil {
+	//	return nil, err
+	//}
+	//task := tasks[0]
+	//logResponse, err := api.client.TaskLogs(ctx, task.ID, logOptions)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//defer logResponse.Close()
+
+	api.client.ServiceRemove(ctx, resp.ID)
+
+	return logResponse, nil
 }

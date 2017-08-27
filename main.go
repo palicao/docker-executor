@@ -42,10 +42,18 @@ func main() {
 
 		api := lib.NewDockerClient(cli)
 
-		response, err := api.RunContainer(jobConf)
-		if err != nil {
-			log.Fatalf("Error running container: %v", err)
+		if jobConf.Type == "run" {
+			response, err := api.RunJobAsContainer(jobConf)
+			if err != nil {
+				log.Fatalf("Error running container: %v", err)
+			}
+			io.Copy(os.Stdout, response)
+		} else {
+			response, err := api.RunJobAsService(jobConf)
+			if err != nil {
+				log.Fatalf("Error running container: %v", err)
+			}
+			io.Copy(os.Stdout, response)
 		}
-		io.Copy(os.Stdout, response)
 	}
 }
