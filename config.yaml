@@ -1,0 +1,9 @@
+
+jobs:
+  alpine_ls:
+    type: run
+    image: alpine
+    tag: latest
+    cmd:
+      - ls
+      - /var
