@@ -1,14 +1,15 @@
 package lib
 
 import (
-	"io"
 	"io/ioutil"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
 
@@ -45,7 +46,47 @@ func (api *DockerApi) pullImage(ctx context.Context, image string, tag string) e
 	return nil
 }
 
-func (api *DockerApi) RunJobAsContainer(job Job) (rc io.ReadCloser, err error) {
+func (api *DockerApi) isTaskComplete(ctx context.Context, serviceId string, doneC chan bool, errC chan error) {
+	filterArgs := filters.NewArgs()
+	filterArgs.Add("service", serviceId)
+	tasks, err := api.client.TaskList(ctx, types.TaskListOptions{Filters: filterArgs})
+	if err != nil {
+		errC <- err
+	}
+
+	if len(tasks) != 1 {
+		errC <- errors.Errorf("Unable to inspect tasks for service %s", serviceId)
+	}
+
+	task := tasks[0]
+
+	switch task.Status.State {
+	case swarm.TaskStateFailed:
+		errC <- errors.Errorf("Service failed")
+	case swarm.TaskStateRejected:
+		errC <- errors.Errorf("Service rejected")
+	case swarm.TaskStateComplete:
+		doneC <- true
+	}
+}
+
+func (api *DockerApi) taskWait(ctx context.Context, serviceId string) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	doneC := make(chan bool, 1)
+	errC := make(chan error, 1)
+	for {
+		select {
+		case <-ticker.C:
+			api.isTaskComplete(ctx, serviceId, doneC, errC)
+		case e := <-errC:
+			return e
+		case <-doneC:
+			return nil
+		}
+	}
+}
+
+func (api *DockerApi) RunJobAsContainer(job Job) (out []byte, err error) {
 
 	ctx := context.Background()
 
@@ -90,57 +131,80 @@ func (api *DockerApi) RunJobAsContainer(job Job) (rc io.ReadCloser, err error) {
 	}
 	defer logResponse.Close()
 
+	response, err := ioutil.ReadAll(logResponse)
+	if err != nil {
+		return nil, err
+	}
+
 	api.client.ContainerRemove(ctx, createResponse.ID, types.ContainerRemoveOptions{})
 
-	return logResponse, nil
+	return response, nil
 }
 
-func (api *DockerApi) RunJobAsService(job Job) (rc io.ReadCloser, err error) {
+func (api *DockerApi) RunJobAsService(job Job) (out []byte, err error) {
 
 	ctx := context.Background()
 
 	replicas := uint64(1)
-	replicatedOptions := swarm.ReplicatedService{
+	replicatedOptions := &swarm.ReplicatedService{
 		Replicas: &replicas,
 	}
 
-	containerSpec := swarm.ContainerSpec{
+	containerSpec := &swarm.ContainerSpec{
 		Image:   job.Image,
 		Command: job.Cmd,
 		Env:     job.Env,
 		//TODO secrets, configs
 	}
 
-	taskTemplate := swarm.TaskSpec{
-		ContainerSpec: &containerSpec,
+	placementPreferences := []swarm.PlacementPreference{}
+	for _, p := range job.PlacementPreferences {
+		preference := swarm.PlacementPreference{
+			Spread: &swarm.SpreadOver{SpreadDescriptor: p},
+		}
+		placementPreferences = append(placementPreferences, preference)
 	}
 
-	resp, err := api.client.ServiceCreate(ctx, swarm.ServiceSpec{
-		Mode:         swarm.ServiceMode{Replicated: &replicatedOptions},
+	placement := &swarm.Placement{
+		Constraints: job.Constraints,
+		Preferences: placementPreferences,
+	}
+
+	taskTemplate := swarm.TaskSpec{
+		ContainerSpec: containerSpec,
+		RestartPolicy: &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionNone},
+		Placement:     placement,
+	}
+
+	createResponse, err := api.client.ServiceCreate(ctx, swarm.ServiceSpec{
+		Mode:         swarm.ServiceMode{Replicated: replicatedOptions},
 		TaskTemplate: taskTemplate,
 	}, types.ServiceCreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 
+	err = api.taskWait(ctx, createResponse.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	logOptions := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
-	logResponse, err := api.client.ServiceLogs(ctx, resp.ID, logOptions)
+	logResponse, err := api.client.ServiceLogs(ctx, createResponse.ID, logOptions)
+	if err != nil {
+		return nil, err
+	}
 	defer logResponse.Close()
 
-	//filterArgs := filters.NewArgs()
-	//filterArgs.Add("service", resp.ID)
-	//tasks, err := api.client.TaskList(ctx, types.TaskListOptions{Filters: filterArgs})
-	//if err != nil {
-	//	return nil, err
-	//}
-	//task := tasks[0]
-	//logResponse, err := api.client.TaskLogs(ctx, task.ID, logOptions)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer logResponse.Close()
+	response, err := ioutil.ReadAll(logResponse)
+	if err != nil {
+		return nil, err
+	}
 
-	api.client.ServiceRemove(ctx, resp.ID)
+	err = api.client.ServiceRemove(ctx, createResponse.ID)
+	if err != nil {
+		return nil, err
+	}
 
-	return logResponse, nil
+	return response, nil
 }

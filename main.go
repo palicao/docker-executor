@@ -2,10 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"os"
-
 	"github.com/docker/docker/client"
 	"github.com/palicao/docker-executor/lib"
 )
@@ -47,13 +44,13 @@ func main() {
 			if err != nil {
 				log.Fatalf("Error running container: %v", err)
 			}
-			io.Copy(os.Stdout, response)
+			fmt.Println(string(response))
 		} else {
 			response, err := api.RunJobAsService(jobConf)
 			if err != nil {
-				log.Fatalf("Error running container: %v", err)
+				log.Fatalf("Error running service: %v", err)
 			}
-			io.Copy(os.Stdout, response)
+			fmt.Println(string(response))
 		}
 	}
 }

@@ -19,7 +19,7 @@ Or, you can run the container in swarm mode and mount the config file as a confi
 
 ## Config file
 The config.yaml looks like this:
-```
+```yml
 jobs:
   job_name:
     type: run # "run" is for using docker run, "service" is if you want to run in swarm mode

@@ -10,16 +10,18 @@ import (
 )
 
 type Job struct {
-	Type       string   `yaml:"type"`
-	Image      string   `yaml:"image"`
-	Tag        string   `yaml:"tag"`
-	Service    string   `yaml:"service"`
-	Schedule   string   `yaml:"schedule"`
-	Secrets    []string `yaml:"secrets"`
-	Configs    []string `yaml:"configs"`
-	Cmd        []string `yaml:"cmd"`
-	Env        []string `yaml:"env"`
-	ApiExpose  bool     `yaml:"api_expose"`
+	Type                 string   `yaml:"type"`
+	Image                string   `yaml:"image"`
+	Tag                  string   `yaml:"tag"`
+	Service              string   `yaml:"service"`
+	Schedule             string   `yaml:"schedule"`
+	Secrets              []string `yaml:"secrets"`
+	Configs              []string `yaml:"configs"`
+	Cmd                  []string `yaml:"cmd"`
+	Env                  []string `yaml:"env"`
+	Constraints          []string `yaml:"constraints"`
+	PlacementPreferences []string `yaml:"placement_preferences"`
+	ApiExpose            bool     `yaml:"api_expose"`
 }
 
 type Config struct {
@@ -42,8 +44,8 @@ func validateJob(job Job) error {
 		}
 	}
 
-	if job.Type == "run" && (len(job.Secrets) > 0 || len(job.Configs) > 0) {
-		return errors.New("Secrets and configs are only allowed for services")
+	if job.Type == "run" && (len(job.Secrets) > 0 || len(job.Configs) > 0 || len(job.Constraints) > 0 || len(job.PlacementPreferences) > 0) {
+		return errors.New("Secrets, configs, constraint and placement preferences are only allowed for services")
 	}
 
 	return nil
