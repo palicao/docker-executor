@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"flag"
 )
 
 type ApiResponse struct {
@@ -22,7 +23,10 @@ type ApiResponse struct {
 }
 
 func main() {
-	config, err := lib.GetConfigFromFile("config.yaml")
+	configFile := flag.String("config", "./config.yaml", "specify the yaml config file location")
+	flag.Parse()
+
+	config, err := lib.GetConfigFromFile(*configFile)
 	if err != nil {
 		log.Fatalf("error reading config: %v", err)
 	}
