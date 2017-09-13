@@ -25,16 +25,21 @@ jobs:
     type: run # "run" is for using docker run, "service" is if you want to run in swarm mode
     image: alpine
     tag: latest
-    cmd:
-      - ls
-      - /var
+    service: alpine # name of the service in case type = "service"
     schedule: "* * * * *" # cron syntax, if you want to execute the job at given intervals
     secrets:
       - source=secret_name,target=/etc/config/secret.yaml
     configs:
       - source=config_name,target=/etc/config/config.yaml
+    cmd:
+      - ls
+      - /var
     env:
       - key=value
+    constraints: # only for services
+      - node.labels.type == queue
+    placement_preferences: # only for services
+      - spread=node.labels.datacenter
     api_expose: true # if you want to expose the service via the built-in API
 ```
 
@@ -45,8 +50,7 @@ mess in the docker project (docker vs. moby vs. docker-ce).
 Hopefully this will change as soon as docker will finally fix the current chaos!
 
 ## Todo
-* RunJobAsService (started)
 * Dockerfile
 * Flag for choosing the config file (defaults to /etc/docker-executor/config.yaml or current folder)
-* HTTP server (to expose services through the API)
-* Cron executor
+* Secrets, configs
+* Tests :D

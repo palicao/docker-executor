@@ -3,10 +3,15 @@ package lib
 import (
 	"fmt"
 	"io/ioutil"
-
 	"github.com/gorhill/cronexpr"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
+)
+
+const (
+	JobTypeRun     = "run"
+	JobTypeService = "service"
+	ImageTagLatest = "latest"
 )
 
 type Job struct {
@@ -29,23 +34,23 @@ type Config struct {
 }
 
 func validateJob(job Job) error {
-	if job.Type != "run" && job.Type != "service" {
-		return errors.New("Type can only be run or service")
+	if job.Type != JobTypeRun && job.Type != JobTypeService {
+		return errors.New("type can only be run or service")
 	}
 
 	if job.Image == "" {
-		return errors.New("Image must not be empty")
+		return errors.New("image must not be empty")
 	}
 
 	if job.Schedule != "" {
 		_, err := cronexpr.Parse(job.Schedule)
 		if err != nil {
-			return errors.New("Schedule must be a valid cron expression")
+			return errors.New("schedule must be a valid cron expression")
 		}
 	}
 
-	if job.Type == "run" && (len(job.Secrets) > 0 || len(job.Configs) > 0 || len(job.Constraints) > 0 || len(job.PlacementPreferences) > 0) {
-		return errors.New("Secrets, configs, constraint and placement preferences are only allowed for services")
+	if job.Type == JobTypeRun && (len(job.Secrets) > 0 || len(job.Configs) > 0 || len(job.Constraints) > 0 || len(job.PlacementPreferences) > 0) {
+		return errors.New("secrets, configs, constraint and placement preferences are only allowed for services")
 	}
 
 	return nil
@@ -53,24 +58,24 @@ func validateJob(job Job) error {
 
 func prepareJob(job Job) Job {
 	if job.Tag == "" {
-		job.Tag = "latest"
+		job.Tag = ImageTagLatest
 	}
 	return job
 }
 
-func CreateConfigFromFile(filename string) (config Config, err error) {
+func GetConfigFromFile(filename string) (config *Config, err error) {
 	configFile, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return config, fmt.Errorf("Unable to read file %s: %v", filename, err)
+		return config, fmt.Errorf("unable to read file %s: %v", filename, err)
 	}
 	err = yaml.Unmarshal(configFile, &config)
 	if err != nil {
-		return config, fmt.Errorf("Unable to unmarshall file %s: %v", filename, err)
+		return config, fmt.Errorf("unable to unmarshall file %s: %v", filename, err)
 	}
 	for i, j := range config.Jobs {
 		err = validateJob(j)
 		if err != nil {
-			return config, fmt.Errorf("Configuration for job %s not valid: %v", i, err)
+			return config, fmt.Errorf("configuration for job %s not valid: %v", i, err)
 		}
 		config.Jobs[i] = prepareJob(j)
 	}

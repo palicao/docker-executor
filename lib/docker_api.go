@@ -1,23 +1,22 @@
 package lib
 
 import (
+	"context"
 	"io/ioutil"
 	"time"
-
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
-	"golang.org/x/net/context"
 )
 
 type DockerApi struct {
 	client *client.Client
 }
 
-func NewDockerClient(cli *client.Client) *DockerApi {
+func NewDockerApi(cli *client.Client) *DockerApi {
 	return &DockerApi{client: cli}
 }
 
@@ -55,16 +54,16 @@ func (api *DockerApi) isTaskComplete(ctx context.Context, serviceId string, done
 	}
 
 	if len(tasks) != 1 {
-		errC <- errors.Errorf("Unable to inspect tasks for service %s", serviceId)
+		errC <- errors.Errorf("unable to inspect tasks for service %s", serviceId)
 	}
 
 	task := tasks[0]
 
 	switch task.Status.State {
 	case swarm.TaskStateFailed:
-		errC <- errors.Errorf("Service failed")
+		errC <- errors.Errorf("service failed")
 	case swarm.TaskStateRejected:
-		errC <- errors.Errorf("Service rejected")
+		errC <- errors.Errorf("service rejected")
 	case swarm.TaskStateComplete:
 		doneC <- true
 	}

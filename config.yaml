@@ -1,9 +1,10 @@
 
 jobs:
-  alpine_ls:
+  alpine_ls1:
     type: service
     image: alpine
     cmd:
       - ls
       - /var
     api_expose: true
+    schedule: "*/30 * * * * * *"
